@@ -6,6 +6,7 @@ const TelegramBot = require("node-telegram-bot-api");
 const fs = require("fs");
 
 const app = express();
+console.log("🚀 DEPLOY TEST - servidor iniciado"); // 👈 AQUÍ
 
 // ✅ SOLUCIÓN PRO
 app.use("/webhook", express.raw({ type: "application/json" }));
@@ -13,13 +14,19 @@ app.use(express.json());
 
 // 🔐 CONFIG
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
-const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: true });
+const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN);
 
 // 🔥 DEBUG CRÍTICO (NUEVO)
-bot.deleteWebHook().then(() => {
-    console.log("🚫 Webhook eliminado");
-});
+// Eliminar webhook correctamente
+bot.deleteWebHook()
+    .then(() => {
+        console.log("🚫 Webhook eliminado");
+    })
+    .catch((err) => {
+        console.log("❌ Error eliminando webhook:", err.message);
+    });
 
+// Verificar que el bot funciona
 bot.getMe()
     .then((me) => {
         console.log("🤖 BOT ACTIVO:", me.username);
@@ -27,7 +34,6 @@ bot.getMe()
     .catch((err) => {
         console.log("❌ ERROR BOT:", err.message);
     });
-
 // ================================
 // 🧠 DB
 // ================================
@@ -279,6 +285,8 @@ bot.on("callback_query", async (query) => {
 });
 
 // ================================
-app.listen(3000, () => {
-    console.log("🚀 Servidor corriendo en puerto 3000");
+const PORT = process.env.PORT || 3000;
+
+app.listen(PORT, () => {
+    console.log("🚀 Servidor corriendo en puerto", PORT);
 });
