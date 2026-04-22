@@ -6,6 +6,7 @@ const TelegramBot = require("node-telegram-bot-api");
 const fs = require("fs");
 
 const app = express();
+console.log("🚀 DEPLOY TEST - servidor iniciado"); // 👈 AQUÍ
 
 // ✅ SOLUCIÓN PRO
 app.use("/webhook", express.raw({ type: "application/json" }));
