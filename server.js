@@ -276,7 +276,7 @@ bot.on("chat_join_request", async (msg) => {
         bot.sendMessage(userId, "🔥 Acceso aprobado. Bienvenido al VIP.");
     } else {
         await bot.declineChatJoinRequest(chatId, userId);
-        bot.sendMessage(userId, "❌ No tienes acceso activo.");
+        bot.sendMessage(userId, "❌No tienes acceso activo. Por favor completar el pago para su acceso");
     }
 });
 
