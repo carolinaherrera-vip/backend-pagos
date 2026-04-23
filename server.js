@@ -242,7 +242,7 @@ bot.on("message", (msg) => {
 
 `¡INDICACIONES A SEGUIR!⚠️🚨
 1.Realiza tu pago en "Comprar acceso".
- 2.Una vez completado el pago, dar click en "Solicitar acceso", de lo contrario, el bot rehazará su acceso.
+2.Una vez completado el pago, dar click en "Solicitar acceso", de lo contrario, el bot rehazará su acceso.
 👇Usa los botones para continuar:`,
 {
     reply_markup: {
