@@ -25,17 +25,15 @@ function saveDB(data) {
     fs.writeFileSync("db.json", JSON.stringify(data, null, 2));
 }
 
-// 🔥 FUNCIÓN MEJORADA (ANTI MULTI-CUENTA)
+// 🔥 ANTI MULTI-CUENTA
 function guardarUsuario(id, customerId, activo = true) {
     const data = getDB();
 
-    // 🔒 Evita que una suscripción se use en múltiples cuentas
     for (let user in data) {
         if (data[user].customer_id === customerId && user != id) {
             expulsarUsuario(user);
             data[user].activo = false;
 
-            // 💬 avisar
             bot.sendMessage(user, "⚠️ Tu cuenta fue usada en otro dispositivo. Acceso revocado.");
         }
     }
@@ -53,23 +51,6 @@ function guardarUsuario(id, customerId, activo = true) {
 function usuarioActivo(id) {
     const data = getDB();
     return data[id]?.activo === true;
-}
-
-function guardarLink(id, linkData) {
-    const data = getDB();
-
-    data[id] = {
-        ...data[id],
-        invite_link: linkData.invite_link,
-        expire_date: linkData.expire_date
-    };
-
-    saveDB(data);
-}
-
-function obtenerLink(id) {
-    const data = getDB();
-    return data[id];
 }
 
 async function expulsarUsuario(telegramId) {
@@ -151,33 +132,11 @@ app.post("/webhook", async (req, res) => {
 
         guardarUsuario(telegramId, customerId, true);
 
-        const userData = obtenerLink(telegramId);
-        let link;
-
-        const ahora = Math.floor(Date.now() / 1000);
-
-        if (
-            userData?.invite_link &&
-            userData?.expire_date > ahora
-        ) {
-            link = userData.invite_link;
-        } else {
-            const newLink = await bot.createChatInviteLink(
-                process.env.GROUP_ID,
-                {
-                    member_limit: 1,
-                    expire_date: ahora + 300
-                }
-            );
-
-            guardarLink(telegramId, newLink);
-            link = newLink.invite_link;
-        }
-
         if (telegramId) {
             bot.sendMessage(
                 telegramId,
-                `🔥 Acceso activado:\n${link}`
+                "🔥 Pago confirmado.\n\n👉 Ahora presiona *Solicitar acceso* para entrar al grupo.",
+                { parse_mode: "Markdown" }
             );
         }
     }
@@ -207,28 +166,24 @@ app.post("/webhook", async (req, res) => {
 
     // ❌ FALLÓ PAGO
     if (event.type === "invoice.payment_failed") {
-    const invoice = event.data.object;
+        const invoice = event.data.object;
 
-    const subscription = await stripe.subscriptions.retrieve(invoice.subscription);
+        const subscription = await stripe.subscriptions.retrieve(invoice.subscription);
 
-    const telegramId = subscription.metadata?.telegram_id;
+        const telegramId = subscription.metadata?.telegram_id;
 
-    if (telegramId) {
-        // ❌ quitar acceso
-        guardarUsuario(telegramId, null, false);
-        await expulsarUsuario(telegramId);
+        if (telegramId) {
+            guardarUsuario(telegramId, null, false);
+            await expulsarUsuario(telegramId);
 
-        // 💬 aviso claro
-        bot.sendMessage(
-            telegramId,
-            "❌ Tu pago mensual falló.\n\nHas sido removido del VIP automáticamente.\n\n💳 Puedes volver a entrar pagando nuevamente."
-        );
+            bot.sendMessage(
+                telegramId,
+                "❌ Pago fallido.\n\nHas sido removido del VIP."
+            );
 
-        // 🔥 OPCIONAL PERO MUY POWER:
-        // cancelar la suscripción para que Stripe NO siga intentando
-        await stripe.subscriptions.cancel(invoice.subscription);
+            await stripe.subscriptions.cancel(invoice.subscription);
+        }
     }
-}
 
     res.sendStatus(200);
 });
@@ -245,9 +200,7 @@ bot.onText(/\/start/, (msg) => {
     bot.sendMessage(userId,
 `🔥 Bienvenido al VIP
 
-Accede a contenido exclusivo
-
-👇 Elige tu acceso:`,
+👇 Elige una opción:`,
 {
     reply_markup: {
         inline_keyboard: [
@@ -259,8 +212,8 @@ Accede a contenido exclusivo
             ],
             [
                 {
-                    text: "🔓 Ya pagué",
-                    callback_data: "check_access"
+                    text: "🚀 Solicitar acceso",
+                    url: "https://t.me/+LBDVFAD16aEwMTJh"
                 }
             ]
         ]
@@ -268,67 +221,38 @@ Accede a contenido exclusivo
 });
 });
 
-// 🎯 BOTÓN CONTROLADO
-bot.on("callback_query", async (query) => {
-    const userId = query.message.chat.id;
+// ================================
+// 🔥 APROBACIÓN AUTOMÁTICA
+// ================================
+bot.on("chat_join_request", async (msg) => {
+    const userId = msg.from.id;
+    const chatId = msg.chat.id;
 
-    if (query.data === "check_access") {
+    if (usuarioActivo(userId)) {
+        await bot.approveChatJoinRequest(chatId, userId);
 
-        const ahora = Date.now();
+        bot.sendMessage(userId, "🔥 Acceso aprobado. Bienvenido al VIP.");
+    } else {
+        await bot.declineChatJoinRequest(chatId, userId);
 
-        // ⛔ ANTI SPAM
-        if (cooldown[userId] && ahora - cooldown[userId] < 10000) {
-            return bot.answerCallbackQuery(query.id, {
-                text: "⏳ Espera unos segundos...",
-            });
-        }
-
-        cooldown[userId] = ahora;
-
-        if (!usuarioActivo(userId)) {
-            return bot.sendMessage(userId, "❌ No tienes acceso activo");
-        }
-
-        const userData = obtenerLink(userId);
-        const ahoraUnix = Math.floor(Date.now() / 1000);
-
-        let link;
-
-        if (
-            userData?.invite_link &&
-            userData?.expire_date > ahoraUnix
-        ) {
-            link = userData.invite_link;
-        } else {
-            const newLink = await bot.createChatInviteLink(
-                process.env.GROUP_ID,
-                {
-                    member_limit: 1,
-                    expire_date: ahoraUnix + 300
-                }
-            );
-
-            guardarLink(userId, newLink);
-            link = newLink.invite_link;
-        }
-
-        bot.sendMessage(userId, `🔥 Acceso:\n${link}`);
+        bot.sendMessage(userId, "❌ No tienes acceso activo.");
     }
 });
+
+// ================================
 // 🚫 ANTI INTRUSOS
+// ================================
 bot.on("new_chat_members", async (msg) => {
     const chatId = msg.chat.id;
 
     for (let user of msg.new_chat_members) {
-        const telegramId = user.id;
+        if (!usuarioActivo(user.id)) {
+            await bot.banChatMember(chatId, user.id);
+            await bot.unbanChatMember(chatId, user.id);
 
-        if (!usuarioActivo(telegramId)) {
-            await bot.banChatMember(chatId, telegramId);
-            await bot.unbanChatMember(chatId, telegramId);
-
-            console.log("🚫 Intruso expulsado:", telegramId);
+            console.log("🚫 Intruso expulsado:", user.id);
         } else {
-            console.log("✅ Cliente válido entró:", telegramId);
+            console.log("✅ Cliente válido entró:", user.id);
         }
     }
 });
