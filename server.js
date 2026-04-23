@@ -104,30 +104,13 @@ app.get("/crear-pago", async (req, res) => {
     telegram_id: telegramId
   },
 
-  subscription_data: {
-    metadata: {
-      telegram_id: telegramId
-    },
-
-    // 🔥 ESTA ES LA CLAVE
-    description: "CAROLINA VIP"
-  },
 
   line_items: [
-    {
-      price_data: {
-        currency: "usd",
-        product_data: {
-          name: "CAROLINA VIP", // 👈 cambia esto también
-        },
-        unit_amount: 3000,
-        recurring: {
-          interval: "month",
-        },
-      },
-      quantity: 1,
-    },
-  ],
+  {
+    price: "price_1TPF5sADvKSan3qmxPgBdJWB",
+    quantity: 1,
+  },
+],
 
   success_url: "https://carolinaherrera-vip.github.io/mi-pagina/gracias.html",
   cancel_url: "https://carolinaherrera-vip.github.io/mi-pagina/cancelado.html"
