@@ -61,6 +61,18 @@ async function expulsarUsuario(telegramId) {
 }
 
 // ================================
+// 🔗 STRIPE CUSTOMER PORTAL (NUEVO)
+// ================================
+async function crearPortal(customerId) {
+    const session = await stripe.billingPortal.sessions.create({
+        customer: customerId,
+        return_url: "https://carolinaherrera-vip.github.io/mi-pagina/"
+    });
+
+    return session.url;
+}
+
+// ================================
 // 🌐 BASE
 // ================================
 app.get("/", (req, res) => {
@@ -222,13 +234,19 @@ Estás a un paso de entrar 👇`;
                         text: "🚀 Solicitar acceso",
                         url: "https://t.me/+LBDVFAD16aEwMTJh"
                     }
+                ],
+                [
+                    {
+                        text: "❌ Cancelar suscripción",
+                        callback_data: "cancelar_info"
+                    }
                 ]
             ]
         }
     });
 });
 
-// 🔥 AUTO RESPUESTA SI ESCRIBE ALGO
+// 🔥 AUTO RESPUESTA
 bot.on("message", (msg) => {
     const userId = msg.chat.id;
 
@@ -239,11 +257,11 @@ bot.on("message", (msg) => {
     cooldown[userId] = Date.now();
 
     bot.sendMessage(userId,
-
 `¡INDICACIONES A SEGUIR!⚠️🚨
 1.Realiza tu pago en "Comprar acceso".
-2.Una vez completado el pago, dar click en "Solicitar acceso", de lo contrario, el bot rehazará su acceso.
-👇Usa los botones para continuar:`,
+2.Una vez completado el pago, dar click en "Solicitar acceso".
+👇Usa los botones:`,
+
 {
     reply_markup: {
         inline_keyboard: [
@@ -258,10 +276,88 @@ bot.on("message", (msg) => {
                     text: "🚀 Solicitar acceso",
                     url: "https://t.me/+LBDVFAD16aEwMTJh"
                 }
+            ],
+            [
+                {
+                    text: "❌ Cancelar suscripción",
+                    callback_data: "cancelar_info"
+                }
             ]
         ]
     }
 });
+});
+
+// ================================
+// ❌ CANCELAR SUSCRIPCIÓN (NUEVO)
+// ================================
+bot.onText(/\/cancelar/, async (msg) => {
+    const userId = msg.chat.id;
+    const data = getDB();
+    const usuario = data[userId];
+
+    if (!usuario || !usuario.customer_id) {
+        return bot.sendMessage(userId, "No encontramos una suscripción activa.");
+    }
+
+    const portalLink = await crearPortal(usuario.customer_id);
+
+    bot.sendMessage(userId, "Gestiona tu suscripción aquí 👇", {
+        reply_markup: {
+            inline_keyboard: [
+                [{ text: "❌ Cancelar suscripción", url: portalLink }]
+            ]
+        }
+    });
+});
+
+// botón callback
+bot.on("callback_query", async (query) => {
+    if (query.data === "cancelar_info") {
+        const userId = query.message.chat.id;
+        const data = getDB();
+        const usuario = data[userId];
+
+        if (!usuario || !usuario.customer_id) {
+            return bot.sendMessage(userId, "No tienes suscripción activa.");
+        }
+
+        const portalLink = await crearPortal(usuario.customer_id);
+
+        bot.sendMessage(userId, "Gestiona tu suscripción aquí 👇", {
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: "❌ Cancelar suscripción", url: portalLink }]
+                ]
+            }
+        });
+    }
+});
+
+// ================================
+// 🚪 DETECTAR SALIDA DEL GRUPO (NUEVO)
+// ================================
+bot.on("left_chat_member", async (msg) => {
+    const userId = msg.left_chat_member.id;
+    const data = getDB();
+    const usuario = data[userId];
+
+    if (!usuario || !usuario.customer_id) return;
+
+    try {
+        const portalLink = await crearPortal(usuario.customer_id);
+
+        await bot.sendMessage(userId, `Vemos que saliste del grupo.
+
+Si deseas cancelar tu suscripción, puedes hacerlo aquí 👇`, {
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: "❌ Cancelar suscripción", url: portalLink }]
+                ]
+            }
+        });
+
+    } catch (err) {}
 });
 
 // ================================
@@ -276,7 +372,7 @@ bot.on("chat_join_request", async (msg) => {
         bot.sendMessage(userId, "🔥 Acceso aprobado. Bienvenido al VIP.");
     } else {
         await bot.declineChatJoinRequest(chatId, userId);
-        bot.sendMessage(userId, "❌No tienes acceso activo. Por favor completar el pago para su acceso.");
+        bot.sendMessage(userId, "❌No tienes acceso activo.");
     }
 });
 
@@ -290,10 +386,6 @@ bot.on("new_chat_members", async (msg) => {
         if (!usuarioActivo(user.id)) {
             await bot.banChatMember(chatId, user.id);
             await bot.unbanChatMember(chatId, user.id);
-
-            console.log("🚫 Intruso expulsado:", user.id);
-        } else {
-            console.log("✅ Cliente válido entró:", user.id);
         }
     }
 });
