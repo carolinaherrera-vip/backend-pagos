@@ -204,13 +204,28 @@ app.post("/webhook", async (req, res) => {
 
     // ❌ FALLÓ PAGO
     if (event.type === "invoice.payment_failed") {
-        const telegramId = event.data.object.metadata?.telegram_id;
+    const invoice = event.data.object;
 
-        if (telegramId) {
-            guardarUsuario(telegramId, null, false);
-            expulsarUsuario(telegramId);
-        }
+    const subscription = await stripe.subscriptions.retrieve(invoice.subscription);
+
+    const telegramId = subscription.metadata?.telegram_id;
+
+    if (telegramId) {
+        // ❌ quitar acceso
+        guardarUsuario(telegramId, null, false);
+        await expulsarUsuario(telegramId);
+
+        // 💬 aviso claro
+        bot.sendMessage(
+            telegramId,
+            "❌ Tu pago mensual falló.\n\nHas sido removido del VIP automáticamente.\n\n💳 Puedes volver a entrar pagando nuevamente."
+        );
+
+        // 🔥 OPCIONAL PERO MUY POWER:
+        // cancelar la suscripción para que Stripe NO siga intentando
+        await stripe.subscriptions.cancel(invoice.subscription);
     }
+}
 
     res.sendStatus(200);
 });
