@@ -135,7 +135,7 @@ app.post("/webhook", async (req, res) => {
         if (telegramId) {
             bot.sendMessage(
                 telegramId,
-                "🔥 Pago confirmado.\n\n👉 Ahora presiona *Solicitar acceso* para entrar al grupo.",
+                "🔥 Pago confirmado.\n\n👉 Presiona *Solicitar acceso* para entrar al grupo.",
                 { parse_mode: "Markdown" }
             );
         }
@@ -178,7 +178,7 @@ app.post("/webhook", async (req, res) => {
 
             bot.sendMessage(
                 telegramId,
-                "❌ Pago fallido.\n\nHas sido removido del VIP."
+                "❌ Tu pago falló.\n\nHas sido removido del VIP."
             );
 
             await stripe.subscriptions.cancel(invoice.subscription);
@@ -193,14 +193,53 @@ app.post("/webhook", async (req, res) => {
 // ================================
 const cooldown = {};
 
-// 🚀 START
-bot.onText(/\/start/, (msg) => {
+// 🚀 START con deep link
+bot.onText(/\/start(?: (.+))?/, (msg, match) => {
+    const userId = msg.chat.id;
+    const param = match[1];
+
+    let mensaje = `🔥 Bienvenido al VIP
+
+👇 Elige una opción:`;
+
+    if (param === "vip") {
+        mensaje = `🔥 Acceso VIP
+
+Estás a un paso de entrar 👇`;
+    }
+
+    bot.sendMessage(userId, mensaje, {
+        reply_markup: {
+            inline_keyboard: [
+                [
+                    {
+                        text: "💳 Comprar acceso",
+                        url: `${process.env.BASE_URL}/crear-pago?user_id=${userId}`
+                    }
+                ],
+                [
+                    {
+                        text: "🚀 Solicitar acceso",
+                        url: "https://t.me/+LBDVFAD16aEwMTJh"
+                    }
+                ]
+            ]
+        }
+    });
+});
+
+// 🔥 AUTO RESPUESTA SI ESCRIBE ALGO
+bot.on("message", (msg) => {
     const userId = msg.chat.id;
 
-    bot.sendMessage(userId,
-`🔥 Bienvenido al VIP
+    if (msg.text && msg.text.startsWith("/")) return;
 
-👇 Elige una opción:`,
+    if (cooldown[userId] && Date.now() - cooldown[userId] < 5000) return;
+
+    cooldown[userId] = Date.now();
+
+    bot.sendMessage(userId,
+`👇 Usa los botones para continuar:`,
 {
     reply_markup: {
         inline_keyboard: [
@@ -222,7 +261,7 @@ bot.onText(/\/start/, (msg) => {
 });
 
 // ================================
-// 🔥 APROBACIÓN AUTOMÁTICA
+// 🔥 APROBAR SOLICITUDES
 // ================================
 bot.on("chat_join_request", async (msg) => {
     const userId = msg.from.id;
@@ -230,11 +269,9 @@ bot.on("chat_join_request", async (msg) => {
 
     if (usuarioActivo(userId)) {
         await bot.approveChatJoinRequest(chatId, userId);
-
         bot.sendMessage(userId, "🔥 Acceso aprobado. Bienvenido al VIP.");
     } else {
         await bot.declineChatJoinRequest(chatId, userId);
-
         bot.sendMessage(userId, "❌ No tienes acceso activo.");
     }
 });
