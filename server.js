@@ -17,7 +17,6 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, {
   polling: true
 });
-
 // 🔥 DEBUG CRÍTICO (NUEVO)
 // Eliminar webhook correctamente
 bot.deleteWebHook()
@@ -95,42 +94,44 @@ app.get("/crear-pago", async (req, res) => {
             return res.send("❌ Falta user_id");
         }
 
-        const session = await stripe.checkout.sessions.create({
-            payment_method_types: ["card"],
-            mode: "subscription",
+       const session = await stripe.checkout.sessions.create({
+  payment_method_types: ["card"],
+  mode: "subscription",
 
-            client_reference_id: telegramId,
+  client_reference_id: telegramId,
 
-            metadata: {
-                telegram_id: telegramId
-            },
+  metadata: {
+    telegram_id: telegramId
+  },
 
-            subscription_data: {
-                metadata: {
-                    telegram_id: telegramId
-                }
-            },
+  subscription_data: {
+    metadata: {
+      telegram_id: telegramId
+    },
 
-            line_items: [
-                {
-                    price_data: {
-                        currency: "usd",
-                        product_data: {
-                            name: "VIP Mensual"
-                        },
-                        unit_amount: 3000,
-                        recurring: {
-                            interval: "month"
-                        }
-                    },
-                    quantity: 1
-                }
-            ],
+    // 🔥 ESTA ES LA CLAVE
+    description: "CAROLINA VIP"
+  },
 
-            success_url: "https://carolinaherrera-vip.github.io/mi-pagina/gracias.html",
-          cancel_url: "https://carolinaherrera-vip.github.io/mi-pagina/cancelado.html"
-        });
+  line_items: [
+    {
+      price_data: {
+        currency: "usd",
+        product_data: {
+          name: "CAROLINA VIP", // 👈 cambia esto también
+        },
+        unit_amount: 3000,
+        recurring: {
+          interval: "month",
+        },
+      },
+      quantity: 1,
+    },
+  ],
 
+  success_url: "https://carolinaherrera-vip.github.io/mi-pagina/gracias.html",
+  cancel_url: "https://carolinaherrera-vip.github.io/mi-pagina/cancelado.html"
+});
         res.redirect(session.url);
 
     } catch (error) {
