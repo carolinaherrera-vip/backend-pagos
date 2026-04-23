@@ -6,45 +6,30 @@ const TelegramBot = require("node-telegram-bot-api");
 const fs = require("fs");
 
 const app = express();
-console.log("🚀 DEPLOY TEST - servidor iniciado"); // 👈 AQUÍ
 
-// ✅ SOLUCIÓN PRO
 app.use("/webhook", express.raw({ type: "application/json" }));
 app.use(express.json());
 
-// 🔐 CONFIG
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
-const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, {
-  polling: true
-});
-// 🔥 DEBUG CRÍTICO (NUEVO)
-// Eliminar webhook correctamente
-bot.deleteWebHook()
-    .then(() => {
-        console.log("🚫 Webhook eliminado");
-    })
-    .catch((err) => {
-        console.log("❌ Error eliminando webhook:", err.message);
-    });
+const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, { polling: true });
 
-// Verificar que el bot funciona
-bot.getMe()
-    .then((me) => {
-        console.log("🤖 BOT ACTIVO:", me.username);
-    })
-    .catch((err) => {
-        console.log("❌ ERROR BOT:", err.message);
-    });
 // ================================
 // 🧠 DB
 // ================================
+function getDB() {
+    if (!fs.existsSync("db.json")) return {};
+    return JSON.parse(fs.readFileSync("db.json"));
+}
+
+function saveDB(data) {
+    fs.writeFileSync("db.json", JSON.stringify(data, null, 2));
+}
+
+// 🔥 FUNCIÓN MEJORADA (ANTI MULTI-CUENTA)
 function guardarUsuario(id, customerId, activo = true) {
-    let data = {};
+    const data = getDB();
 
-    if (fs.existsSync("db.json")) {
-        data = JSON.parse(fs.readFileSync("db.json"));
-    }
-
+    // 🔒 Evita que una suscripción se use en múltiples cuentas
     for (let user in data) {
         if (data[user].customer_id === customerId && user != id) {
             expulsarUsuario(user);
@@ -53,34 +38,49 @@ function guardarUsuario(id, customerId, activo = true) {
     }
 
     data[id] = {
+        ...data[id],
         activo,
         customer_id: customerId,
         actualizado: Date.now()
     };
 
-    fs.writeFileSync("db.json", JSON.stringify(data, null, 2));
+    saveDB(data);
 }
 
 function usuarioActivo(id) {
-    if (!fs.existsSync("db.json")) return false;
-    const data = JSON.parse(fs.readFileSync("db.json"));
+    const data = getDB();
     return data[id]?.activo === true;
+}
+
+function guardarLink(id, linkData) {
+    const data = getDB();
+
+    data[id] = {
+        ...data[id],
+        invite_link: linkData.invite_link,
+        expire_date: linkData.expire_date
+    };
+
+    saveDB(data);
+}
+
+function obtenerLink(id) {
+    const data = getDB();
+    return data[id];
 }
 
 async function expulsarUsuario(telegramId) {
     try {
         await bot.banChatMember(process.env.GROUP_ID, telegramId);
         await bot.unbanChatMember(process.env.GROUP_ID, telegramId);
-    } catch (err) {
-        console.log("Error expulsando:", err.message);
-    }
+    } catch (err) {}
 }
 
 // ================================
-// 🌐 RUTA BASE (IMPORTANTE)
+// 🌐 BASE
 // ================================
 app.get("/", (req, res) => {
-    res.send("🔥 Backend funcionando correctamente");
+    res.send("🔥 Backend funcionando");
 });
 
 // ================================
@@ -90,31 +90,27 @@ app.get("/crear-pago", async (req, res) => {
     try {
         const telegramId = req.query.user_id;
 
-        if (!telegramId) {
-            return res.send("❌ Falta user_id");
-        }
+        const session = await stripe.checkout.sessions.create({
+            payment_method_types: ["card"],
+            mode: "subscription",
 
-       const session = await stripe.checkout.sessions.create({
-  payment_method_types: ["card"],
-  mode: "subscription",
+            client_reference_id: telegramId,
 
-  client_reference_id: telegramId,
+            metadata: {
+                telegram_id: telegramId
+            },
 
-  metadata: {
-    telegram_id: telegramId
-  },
+            line_items: [
+                {
+                    price: "price_1TPF5sADvKSan3qmxPgBdJWB",
+                    quantity: 1,
+                },
+            ],
 
+            success_url: "https://carolinaherrera-vip.github.io/mi-pagina/gracias.html",
+            cancel_url: "https://carolinaherrera-vip.github.io/mi-pagina/cancelado.html"
+        });
 
-  line_items: [
-  {
-    price: "price_1TPF5sADvKSan3qmxPgBdJWB",
-    quantity: 1,
-  },
-],
-
-  success_url: "https://carolinaherrera-vip.github.io/mi-pagina/gracias.html",
-  cancel_url: "https://carolinaherrera-vip.github.io/mi-pagina/cancelado.html"
-});
         res.redirect(session.url);
 
     } catch (error) {
@@ -140,6 +136,7 @@ app.post("/webhook", async (req, res) => {
         return res.sendStatus(400);
     }
 
+    // ✅ PAGO COMPLETADO
     if (event.type === "checkout.session.completed") {
         const session = event.data.object;
 
@@ -151,22 +148,38 @@ app.post("/webhook", async (req, res) => {
 
         guardarUsuario(telegramId, customerId, true);
 
-        const link = await bot.createChatInviteLink(
-            process.env.GROUP_ID,
-            { member_limit: 1 }
-        );
+        const userData = obtenerLink(telegramId);
+        let link;
 
-        // ✅ VALIDACIÓN CRÍTICA AÑADIDA
+        const ahora = Math.floor(Date.now() / 1000);
+
+        if (
+            userData?.invite_link &&
+            userData?.expire_date > ahora
+        ) {
+            link = userData.invite_link;
+        } else {
+            const newLink = await bot.createChatInviteLink(
+                process.env.GROUP_ID,
+                {
+                    member_limit: 1,
+                    expire_date: ahora + 300
+                }
+            );
+
+            guardarLink(telegramId, newLink);
+            link = newLink.invite_link;
+        }
+
         if (telegramId) {
             bot.sendMessage(
                 telegramId,
-                `🔥 Acceso activado:\n${link.invite_link}`
+                `🔥 Acceso activado:\n${link}`
             );
-        } else {
-            console.log("⚠️ telegramId no encontrado en checkout.session.completed");
         }
     }
-    
+
+    // ✅ RENOVACIÓN
     if (event.type === "invoice.payment_succeeded") {
         const invoice = event.data.object;
 
@@ -179,6 +192,7 @@ app.post("/webhook", async (req, res) => {
         }
     }
 
+    // ❌ CANCELACIÓN
     if (event.type === "customer.subscription.deleted") {
         const telegramId = event.data.object.metadata?.telegram_id;
 
@@ -188,6 +202,7 @@ app.post("/webhook", async (req, res) => {
         }
     }
 
+    // ❌ FALLÓ PAGO
     if (event.type === "invoice.payment_failed") {
         const telegramId = event.data.object.metadata?.telegram_id;
 
@@ -203,33 +218,16 @@ app.post("/webhook", async (req, res) => {
 // ================================
 // 🤖 BOT
 // ================================
+const cooldown = {};
 
-// 🔥 DEBUG TOTAL
-bot.on("message", (msg) => {
-    console.log("📩 MENSAJE DETECTADO:");
-    console.log(JSON.stringify(msg, null, 2));
-});
-
-// 🔥 NUEVO: detectar cambios en el grupo
-bot.on("my_chat_member", (msg) => {
-    console.log("👀 CAMBIO EN EL CHAT:");
-    console.log(JSON.stringify(msg, null, 2));
-});
-
-// 🔥 NUEVO: detectar nuevos miembros
-bot.on("new_chat_members", (msg) => {
-    console.log("👥 NUEVO MIEMBRO:");
-    console.log(JSON.stringify(msg, null, 2));
-});
-
-// 🚀 COMANDO START
+// 🚀 START
 bot.onText(/\/start/, (msg) => {
     const userId = msg.chat.id;
 
     bot.sendMessage(userId,
 `🔥 Bienvenido al VIP
 
-Accede a contenido exclusivo y comunidad privada.
+Accede a contenido exclusivo
 
 👇 Elige tu acceso:`,
 {
@@ -252,21 +250,51 @@ Accede a contenido exclusivo y comunidad privada.
 });
 });
 
-// 🎯 BOTÓN
+// 🎯 BOTÓN CONTROLADO
 bot.on("callback_query", async (query) => {
     const userId = query.message.chat.id;
 
     if (query.data === "check_access") {
-        if (usuarioActivo(userId)) {
-            const link = await bot.createChatInviteLink(
+
+        const ahora = Date.now();
+
+        // ⛔ ANTI SPAM
+        if (cooldown[userId] && ahora - cooldown[userId] < 10000) {
+            return bot.answerCallbackQuery(query.id, {
+                text: "⏳ Espera unos segundos...",
+            });
+        }
+
+        cooldown[userId] = ahora;
+
+        if (!usuarioActivo(userId)) {
+            return bot.sendMessage(userId, "❌ No tienes acceso activo");
+        }
+
+        const userData = obtenerLink(userId);
+        const ahoraUnix = Math.floor(Date.now() / 1000);
+
+        let link;
+
+        if (
+            userData?.invite_link &&
+            userData?.expire_date > ahoraUnix
+        ) {
+            link = userData.invite_link;
+        } else {
+            const newLink = await bot.createChatInviteLink(
                 process.env.GROUP_ID,
-                { member_limit: 1 }
+                {
+                    member_limit: 1,
+                    expire_date: ahoraUnix + 300
+                }
             );
 
-            bot.sendMessage(userId, `🔥 Acceso concedido:\n${link.invite_link}`);
-        } else {
-            bot.sendMessage(userId, "❌ No tienes acceso activo");
+            guardarLink(userId, newLink);
+            link = newLink.invite_link;
         }
+
+        bot.sendMessage(userId, `🔥 Acceso:\n${link}`);
     }
 });
 
