@@ -34,6 +34,9 @@ function guardarUsuario(id, customerId, activo = true) {
         if (data[user].customer_id === customerId && user != id) {
             expulsarUsuario(user);
             data[user].activo = false;
+
+            // 💬 avisar
+            bot.sendMessage(user, "⚠️ Tu cuenta fue usada en otro dispositivo. Acceso revocado.");
         }
     }
 
@@ -310,6 +313,23 @@ bot.on("callback_query", async (query) => {
         }
 
         bot.sendMessage(userId, `🔥 Acceso:\n${link}`);
+    }
+});
+// 🚫 ANTI INTRUSOS
+bot.on("new_chat_members", async (msg) => {
+    const chatId = msg.chat.id;
+
+    for (let user of msg.new_chat_members) {
+        const telegramId = user.id;
+
+        if (!usuarioActivo(telegramId)) {
+            await bot.banChatMember(chatId, telegramId);
+            await bot.unbanChatMember(chatId, telegramId);
+
+            console.log("🚫 Intruso expulsado:", telegramId);
+        } else {
+            console.log("✅ Cliente válido entró:", telegramId);
+        }
     }
 });
 
