@@ -14,7 +14,9 @@ app.use(express.json());
 
 // 🔐 CONFIG
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
-const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN);
+const bot = new TelegramBot(process.env.TELEGRAM_BOT_TOKEN, {
+  polling: true
+});
 
 // 🔥 DEBUG CRÍTICO (NUEVO)
 // Eliminar webhook correctamente
